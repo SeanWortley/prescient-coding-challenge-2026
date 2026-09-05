@@ -49,9 +49,12 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 
 PARAMS = {
-    "vol_days":    250,     # lookback for the volatility estimate
-    "tilt_size":   0.06,    # how far a 1-sigma signal moves a weight
-    "trade_speed": 0.10,    # fraction of the gap to yesterday we close per day
+        "mom_20": 20,
+        "mom_60": 60,
+        "mom_120": 120,
+        "mom_250": 250,
+        "tilt_size": 0.14,
+        "trade_speed": 0.1,
 }
 
 # The rules, restated locally so this file reads on its own.
@@ -94,13 +97,32 @@ def build_signal(hist, params) -> pd.Series:
 
     Naive placeholder: inverse volatility. Lower-volatility assets score
     higher. That is a statement about risk, not about return -- replace it.
-    """
-    vol = hist.returns.tail(int(params["vol_days"])).std() * np.sqrt(252)
-    score = (1.0 / vol.replace(0.0, np.nan)).reindex(hist.assets).fillna(0.0)
 
-    # standardise so the signal scale is stable through time
-    if score.std() > 0:
-        score = (score - score.mean()) / score.std()
+
+hist.date                 the day you are allocating for (no data for it yet)
+hist.returns              DataFrame [date x asset] of daily returns, decimals
+hist.prices               DataFrame [date x asset] of total-return index levels
+hist.macro                DataFrame [date x macro feature]
+hist.assets               list of the six asset codes, in order
+hist.benchmark            Series of benchmark weights
+hist.active_weight(w)     total active weight of w -- the number rule 3 tests
+
+prev_weights              what you held yesterday. Trading away from it costs
+                          money, so look at it.
+params                    the PARAMS dict below, passed straight through
+    """
+
+    mom_20 = hist.prices.pct_change(int(params["mom_20"])).iloc[-1]
+    mom_60 = hist.prices.pct_change(int(params["mom_60"])).iloc[-1]
+    mom_120 = hist.prices.pct_change(int(params["mom_120"])).iloc[-1]
+    mom_250 = hist.prices.pct_change(int(params["mom_250"])).iloc[-1]
+
+    mom = 0.10*mom_20 + 0.15*mom_60 + 0.25*mom_120 + 0.50*mom_250
+
+    mom = mom.reindex(hist.assets)
+    score = (mom - mom.mean()) / mom.std()
+    score = score.fillna(0.0)
+
     return score
 
 
