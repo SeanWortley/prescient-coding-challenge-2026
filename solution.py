@@ -53,6 +53,7 @@ PARAMS = {
         "mom_60": 60,
         "mom_120": 120,
         "mom_250": 250,
+        "breakout_days": 250,
         "vix_days": 2,
         "z_days": 500,
         "mix": 0.1,
