@@ -49,16 +49,9 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 
 PARAMS = {
-        "mom_20": 20,
-        "mom_60": 60,
-        "mom_120": 120,
-        "mom_250": 250,
-        "breakout_days": 250,
-        "vix_days": 2,
-        "z_days": 500,
-        "mix": 0.1,
-        "tilt_size": 0.14,
-        "trade_speed": 0.1,
+    "vix_days":  2,       # window for the VIX move we react to
+    "z_days":    500,     # history used to standardise that move
+    "tilt_size": 0.14,    # how far a 1-sigma signal moves SA equity
 }
 
 # The rules, restated locally so this file reads on its own.
@@ -97,48 +90,22 @@ GOLD_CAP = 0.10
 
 
 def build_signal(hist, params) -> pd.Series:
-    """Score per asset. Positive means overweight, negative means underweight.
+    """One timed exposure: SA equity against cash, sized by the VIX move.
 
-    Naive placeholder: inverse volatility. Lower-volatility assets score
-    higher. That is a statement about risk, not about return -- replace it.
-
-
-hist.date                 the day you are allocating for (no data for it yet)
-hist.returns              DataFrame [date x asset] of daily returns, decimals
-hist.prices               DataFrame [date x asset] of total-return index levels
-hist.macro                DataFrame [date x macro feature]
-hist.assets               list of the six asset codes, in order
-hist.benchmark            Series of benchmark weights
-hist.active_weight(w)     total active weight of w -- the number rule 3 tests
-
-prev_weights              what you held yesterday. Trading away from it costs
-                          money, so look at it.
-params                    the PARAMS dict below, passed straight through
+    The US session closes after the JSE, so yesterday's VIX close is public
+    information that cannot yet be inside yesterday's SA closing prices.
     """
-
-    mom_20 = hist.prices.pct_change(int(params["mom_20"])).iloc[-1]
-    mom_60 = hist.prices.pct_change(int(params["mom_60"])).iloc[-1]
-    mom_120 = hist.prices.pct_change(int(params["mom_120"])).iloc[-1]
-    mom_250 = hist.prices.pct_change(int(params["mom_250"])).iloc[-1]
-
-    mom = 0.10*mom_20 + 0.15*mom_60 + 0.25*mom_120 + 0.50*mom_250
-
-    mom = mom.reindex(hist.assets)
-    mom_score = (mom - mom.mean()) / mom.std()
-    mom_score = mom_score.fillna(0.0)
-    
     move = hist.macro["vix"].diff(int(params["vix_days"]))
     w = int(params["z_days"])
     z = (move - move.rolling(w).mean()) / move.rolling(w).std()
 
-    vix_score = pd.Series(0.0, index=hist.assets)
-    if len(z) and np.isfinite(z.iloc[-1]):
-        last = float(z.iloc[-1])
-        vix_score["SA_EQUITY"] = -last
-        vix_score["SA_CASH"]   =  last
-
-    mix = float(params["mix"])
-    return ((1.0-mix) * vix_score + mix * mom_score).fillna(0.0)
+    score = pd.Series(0.0, index=hist.assets)
+    if len(z) == 0 or not np.isfinite(z.iloc[-1]):
+        return score
+    last = float(z.iloc[-1])
+    score["SA_EQUITY"] = -last
+    score["SA_CASH"]   =  last
+    return score
 
 
 def make_legal(weights: pd.Series, hist) -> pd.Series:
@@ -192,22 +159,11 @@ def make_legal(weights: pd.Series, hist) -> pd.Series:
 
 def generate_weights(hist, prev_weights, params):
     """Return the six portfolio weights to hold on hist.date."""
-    # Hello
     bm = hist.benchmark
-
-    # not enough history to estimate anything: sit on the benchmark
     if len(hist.returns) < 260:
         return bm.to_dict()
-
-    # 1. signal -> target weights around the benchmark
     signal = build_signal(hist, params)
-    target = make_legal(bm + float(params["tilt_size"]) * signal, hist)
-
-    # 2. trade gradually toward the target rather than jumping to it
-    prev = prev_weights.reindex(hist.assets)
-    w = prev + float(params["trade_speed"]) * (target - prev)
-
-    return make_legal(w, hist).to_dict()
+    return make_legal(bm + float(params["tilt_size"]) * signal, hist).to_dict()
 
 
 # <<--------------------- YOUR CODE GOES ABOVE THIS LINE --------------------->>
