@@ -49,9 +49,9 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 
 PARAMS = {
-    "vix_days":  5,       # window for the VIX move we react to
-    "z_days":    500,     # history used to standardise that move
-    "tilt_size": 0.10,    # how far a 1-sigma signal moves SA equity
+    "vol_days":    250,     # lookback for the volatility estimate
+    "tilt_size":   0.06,    # how far a 1-sigma signal moves a weight
+    "trade_speed": 0.10,    # fraction of the gap to yesterday we close per day
 }
 
 # The rules, restated locally so this file reads on its own.
@@ -92,31 +92,15 @@ GOLD_CAP = 0.10
 def build_signal(hist, params) -> pd.Series:
     """Score per asset. Positive means overweight, negative means underweight.
 
-    One idea, one exposure: risk-on versus risk-off, timed by the VIX.
-
-    Why the VIX, and why the *change* rather than the level. The US session
-    closes after the JSE does, so yesterday's VIX close is public information
-    that cannot yet be inside yesterday's South African closing prices. A
-    falling VIX over the last week has preceded risk assets beating the
-    benchmark in 19 of the last 20 calendar years. The VIX *level* does not do
-    this -- a calm market is not the same thing as a calming one.
-
-    The view is expressed in SA equity against cash and bonds because that is
-    the cheap way to say it: 15bp + 1bp/8bp a side. Saying the same thing with
-    property (35bp) or gold (25bp) costs four times as much for no more signal,
-    so they stay at benchmark.
+    Naive placeholder: inverse volatility. Lower-volatility assets score
+    higher. That is a statement about risk, not about return -- replace it.
     """
-    move = hist.macro["vix"].diff(int(params["vix_days"]))
-    window = int(params["z_days"])
-    z = (move - move.rolling(window).mean()) / move.rolling(window).std()
+    vol = hist.returns.tail(int(params["vol_days"])).std() * np.sqrt(252)
+    score = (1.0 / vol.replace(0.0, np.nan)).reindex(hist.assets).fillna(0.0)
 
-    score = pd.Series(0.0, index=hist.assets)
-    if len(z) == 0 or not np.isfinite(z.iloc[-1]):
-        return score                       # not enough history yet: no view
-
-    risk_on = -float(z.iloc[-1])           # VIX falling -> risk on
-    score["SA_EQUITY"] = risk_on
-    score["SA_CASH"] = -risk_on
+    # standardise so the signal scale is stable through time
+    if score.std() > 0:
+        score = (score - score.mean()) / score.std()
     return score
 
 
@@ -178,8 +162,15 @@ def generate_weights(hist, prev_weights, params):
     if len(hist.returns) < 260:
         return bm.to_dict()
 
+    # 1. signal -> target weights around the benchmark
     signal = build_signal(hist, params)
-    return make_legal(bm + float(params["tilt_size"]) * signal, hist).to_dict()
+    target = make_legal(bm + float(params["tilt_size"]) * signal, hist)
+
+    # 2. trade gradually toward the target rather than jumping to it
+    prev = prev_weights.reindex(hist.assets)
+    w = prev + float(params["trade_speed"]) * (target - prev)
+
+    return make_legal(w, hist).to_dict()
 
 
 # <<--------------------- YOUR CODE GOES ABOVE THIS LINE --------------------->>
