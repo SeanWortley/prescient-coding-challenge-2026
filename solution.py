@@ -171,6 +171,7 @@ def make_legal(weights: pd.Series, hist) -> pd.Series:
 
 def generate_weights(hist, prev_weights, params):
     """Return the six portfolio weights to hold on hist.date."""
+    # Hello
     bm = hist.benchmark
 
     # not enough history to estimate anything: sit on the benchmark
