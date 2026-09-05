@@ -49,9 +49,9 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 
 PARAMS = {
-    "vix_days":  2,       # window for the VIX move we react to
-    "z_days":    500,     # history used to standardise that move
-    "tilt_size": 0.14,    # how far a 1-sigma signal moves SA equity
+    "vix_days":  2,       
+    "z_days":    500,     
+    "tilt_size": 0.14,   
 }
 
 # The rules, restated locally so this file reads on its own.
