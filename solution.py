@@ -53,6 +53,9 @@ PARAMS = {
         "mom_60": 60,
         "mom_120": 120,
         "mom_250": 250,
+        "vix_days": 2,
+        "z_days": 500,
+        "mix": 0.1,
         "tilt_size": 0.14,
         "trade_speed": 0.1,
 }
@@ -120,10 +123,21 @@ params                    the PARAMS dict below, passed straight through
     mom = 0.10*mom_20 + 0.15*mom_60 + 0.25*mom_120 + 0.50*mom_250
 
     mom = mom.reindex(hist.assets)
-    score = (mom - mom.mean()) / mom.std()
-    score = score.fillna(0.0)
+    mom_score = (mom - mom.mean()) / mom.std()
+    mom_score = mom_score.fillna(0.0)
+    
+    move = hist.macro["vix"].diff(int(params["vix_days"]))
+    w = int(params["z_days"])
+    z = (move - move.rolling(w).mean()) / move.rolling(w).std()
 
-    return score
+    vix_score = pd.Series(0.0, index=hist.assets)
+    if len(z) and np.isfinite(z.iloc[-1]):
+        last = float(z.iloc[-1])
+        vix_score["SA_EQUITY"] = -last
+        vix_score["SA_CASH"]   =  last
+
+    mix = float(params["mix"])
+    return ((1.0-mix) * vix_score + mix * mom_score).fillna(0.0)
 
 
 def make_legal(weights: pd.Series, hist) -> pd.Series:
